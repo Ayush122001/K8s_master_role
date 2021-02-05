@@ -1,0 +1,74 @@
+---
+- name: install docker
+  package:
+      name: docker
+      state: present
+
+- name: start docker serveice
+  service:
+      name: docker
+      state: started
+      enabled: yes
+
+- name: configuring repo for kudeadm
+  copy:
+      src: kube.repo
+      dest: /etc/yum.repos.d/kube.repo
+
+- name: installing kubeadm,kubectl & kublet
+  command: yum install -y kubeadm kublet kubectl --disableexcludes=kubernetes
+
+
+- name: start kublet serveice
+  service:
+      name: kubelet
+      state: started
+      enabled: yes
+  ignore_errors: yes
+
+
+- name: pulling required images for k8s master
+  command: kubeadm config images pull
+
+- name: installing iproute-tc for k8s
+  package:
+      name: iproute-tc
+      state: present
+
+- name: changing driver of docker
+  copy:
+      src: docker_driver
+      dest: /etc/docker/daemon.json
+
+- name: start docker serveice
+  service:
+      name: docker
+      state: restarted
+      enabled: yes
+
+- name: configuring n/w of k8s
+  copy:
+      src: k8s.conf
+      dest: /etc/sysctl.d/k8s.conf
+
+- name: restarting
+  command: sysctl --system
+
+
+- name: init k8s master
+  command: kubeadm init --pod-network-cidr=10.240.0.0/16 --ignore-preflight-errors=NumCPU --ignore-preflight-errors=Mem
+
+- name: configuring k8s master as its client(creating directory)
+  file:
+      path: /root/.kube
+      state: directory
+      group: root
+      owner: root
+
+- name: configuring k8s master as its client(copying file)
+  command: cp -i /etc/kubernetes/admin.conf  /root/.kube/config
+
+- name: creating flannel container for implementing overlay concept
+  command: kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+
+# tasks file for k8s_master
